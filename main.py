@@ -1,4 +1,12 @@
 
+##################################################################
+#                                                                #
+#            ATML Project - Graph Attention Networks             #
+#                                                                #
+# Ouns El Harzli, Yangyuqing Li, Daniel Ritter, Dylan Sandfelder #
+#                                                                #
+##################################################################
+
 # Library imports
 import pickle
 import torch
