@@ -15,9 +15,10 @@ HIDDEN_FEATURES = 64
 CUR_MODEL = 'GAT' # Options: GAT, GCN, GIN
 
 USE_EARLY_STOPPING = True
-FORCED_EPOCHS = 15
-STOPPING_CRITERIA = 10
-NUM_EPOCHS = 200
+FORCED_EPOCHS = 20
+STOPPING_CRITERIA = 15
+NUM_EPOCHS = 100
+LOGGING_FREQUENCY = 10
 
 VERBOSE = True
 
@@ -136,6 +137,18 @@ def main():
                             print('Stopping training...')
                         stop_training = True
         else:
+            if VERBOSE:
+                if not epoch == 0 and (epoch + 1) % LOGGING_FREQUENCY == 0:
+                    model.eval()
+                    if CUR_DATASET == 'PPI':
+                        pred = (model(dataVal)>0.5).int()
+                        correct = (pred == dataVal.y).sum()
+                        acc = float(int(correct) / int(dataVal.y.shape[0] * num_classes))
+                    else:
+                        pred = model(data).argmax(dim=1)
+                        correct = (pred[data.val_mask] == data.y[data.val_mask]).sum()
+                        acc = float(int(correct) / int(data.val_mask.sum()))
+                    print('Epoch: ' + str(epoch + 1) + ', Validation Accuracy: ' + str(acc) + '%')
             if epoch >= NUM_EPOCHS - 1:
                 stop_training = True
         epoch = epoch + 1
