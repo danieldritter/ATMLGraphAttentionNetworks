@@ -21,6 +21,7 @@ from GAT import GraphAttentionLayer
 CUR_DATASET = 'AmazonPhotos' # Options: Cora, Citeseer, Pubmed, PPI, AmazonComp, AmazonPhotos
 
 LEARNING_RATE = 0.005
+WEIGHT_DECAY = 5e-4
 HIDDEN_FEATURES = 8
 CUR_MODEL = 'GATGeometric' # Options: GAT, GATGeometric, GCN, GIN
 
@@ -107,7 +108,7 @@ def main():
         else:
             data = dataset[0]
             data = T.RandomNodeSplit(split='test_rest', num_train_per_class=20, num_val=0.1)(data).to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=5e-4)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
         if VERBOSE:
             print('Starting training...')
