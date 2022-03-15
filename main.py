@@ -18,7 +18,7 @@ from GAT import GraphAttentionLayer
 
 
 # Hyper-Parameters
-CUR_DATASET = 'AmazonPhotos' # Options: Cora, Citeseer, Pubmed, PPI, AmazonComp, AmazonPhotos
+CUR_DATASET = 'Cora' # Options: Cora, Citeseer, Pubmed, PPI, AmazonComp, AmazonPhotos
 
 LEARNING_RATE = 0.005
 WEIGHT_DECAY = 5e-4
@@ -75,6 +75,7 @@ class GATNet(torch.nn.Module):
 # Main code
 def main():
     total_avg = 0.0
+    total_avg_list = []
     for i in range(NUM_RUNS):
         if VERBOSE:
             print('Starting run number: ' + str(i + 1))
@@ -192,8 +193,9 @@ def main():
 
         print(f'Test Accuracy: {acc:.4f}%')
         total_avg += acc
+        total_avg_list.append(acc)
 
-    print('All Results: ' + str(total_avg))
+    print('All Results: ' + str(total_avg_list))
     print(f'Total Test Average: {total_avg/NUM_RUNS}')
 
 if __name__ == '__main__':
