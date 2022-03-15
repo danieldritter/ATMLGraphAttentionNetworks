@@ -11,12 +11,13 @@
 import pickle
 import torch
 import torch.nn.functional as F
-from torch_geometric.datasets import Planetoid, PPI
+import torch_geometric.transforms as T
+from torch_geometric.datasets import Planetoid, PPI, Amazon
 from torch_geometric.nn import GATConv, GCNConv, GINConv
 
 
 # Hyper-Parameters
-CUR_DATASET = 'PPI' # Options: Cora, Citeseer, Pubmed, PPI
+CUR_DATASET = 'AmazonComp' # Options: Cora, Citeseer, Pubmed, PPI, AmazonComp, AmazonPhotos
 
 LEARNING_RATE = 0.01
 HIDDEN_FEATURES = 64
@@ -74,6 +75,14 @@ def main():
         dataset = Planetoid('./data', CUR_DATASET)
         num_features = dataset.num_node_features
         num_classes = dataset.num_classes
+    elif CUR_DATASET == 'AmazonComp':
+        dataset = Amazon('./data', 'Computers')
+        num_features = 767
+        num_classes = 10
+    elif CUR_DATASET == 'AmazonPhotos':
+        dataset = Amazon('./data', 'Photo')
+        num_features = 745
+        num_classes = 8
     elif CUR_DATASET == 'PPI':
         datasetTrain = PPI('./data', 'train')
         datasetVal = PPI('./data', 'val')
@@ -88,7 +97,8 @@ def main():
         dataVal = datasetVal[0].to(device)
         dataTest = datasetTest[0].to(device)
     else:
-        data = dataset[0].to(device)
+        data = dataset[0]
+        data = T.RandomNodeSplit(num_val=0.1, num_test=0.2)(data).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=5e-4)
 
     if VERBOSE:
