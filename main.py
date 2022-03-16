@@ -10,6 +10,7 @@
 # Library imports
 import pickle
 import torch
+from utils import gen_graph
 import torch.nn.functional as F
 import torch_geometric.transforms as T
 from torch_geometric.datasets import Planetoid, PPI, Amazon
@@ -21,9 +22,9 @@ from GAT import GraphAttentionLayer
 CUR_DATASET = 'Cora' # Options: Cora, Citeseer, Pubmed, PPI, AmazonComp, AmazonPhotos
 
 LEARNING_RATE = 0.005
-WEIGHT_DECAY = 5e-4
+WEIGHT_DECAY = .0005
 HIDDEN_FEATURES = 8
-CUR_MODEL = 'GATGeometric' # Options: GAT, GATGeometric, GCN, GIN
+CUR_MODEL = 'GAT' # Options: GAT, GATGeometric, GCN, GIN
 
 USE_EARLY_STOPPING = True
 FORCED_EPOCHS = 20
@@ -47,8 +48,8 @@ class GATNet(torch.nn.Module):
             self.conv1 = GraphAttentionLayer(num_features, HIDDEN_FEATURES, num_heads=8, concat=True)
             self.conv2 = GraphAttentionLayer(HIDDEN_FEATURES*8, num_classes, num_heads=1)
         elif CUR_MODEL == 'GATGeometric':
-            self.conv1 = GATConv(num_features, HIDDEN_FEATURES, heads=8)
-            self.conv2 = GATConv(HIDDEN_FEATURES*8, num_classes, heads=8,  concat=False)
+            self.conv1 = GATConv(num_features, HIDDEN_FEATURES, heads=8, dropout=0.6)
+            self.conv2 = GATConv(HIDDEN_FEATURES*8, num_classes, heads=1,  concat=False, dropout=0.6)
         elif CUR_MODEL == 'GCN':
             self.conv1 = GCNConv(num_features, HIDDEN_FEATURES)
             self.conv2 = GCNConv(HIDDEN_FEATURES, num_classes)
@@ -77,6 +78,10 @@ def main():
     total_avg = 0.0
     total_avg_list = []
     for i in range(NUM_RUNS):
+        train_losses = [] 
+        train_accs = [] 
+        val_losses = [] 
+        val_accs = []
         if VERBOSE:
             print('Starting run number: ' + str(i + 1))
 
@@ -108,48 +113,65 @@ def main():
             dataTest = datasetTest[0].to(device)
         else:
             data = dataset[0]
-            data = T.RandomNodeSplit(split='test_rest', num_train_per_class=20, num_val=0.1)(data).to(device)
+            data = T.RandomNodeSplit(split='random', num_train_per_class=20, num_val=500, num_test=1000)(data).to(device)
+        data = T.NormalizeFeatures()(data)
         optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-
         if VERBOSE:
             print('Starting training...')
 
-        model.train()
         epoch = 0
         stop_counter = 0
         cur_max = 0.0
+        cur_min_loss = float("inf")
         stop_training = False
         while not stop_training:
+            model.train()
             optimizer.zero_grad()
             out = model(data)
             if CUR_DATASET == 'PPI':
+                pred = (out>0.5).int()
                 loss = F.cross_entropy(out, data.y)
+                correct = (pred == dataVal.y).sum()
+                acc = float(int(correct) / int(data.y.shape[0] * num_classes))
             else:
+                pred = out.argmax(dim=1)
                 loss = F.nll_loss(out[data.train_mask], data.y[data.train_mask])
+                correct = (pred[data.train_mask] == data.y[data.train_mask]).sum()
+                acc = (correct / data.train_mask.sum()).item()
+            train_losses.append(loss.item())
+            train_accs.append(acc)
             loss.backward()
             optimizer.step()
             if USE_EARLY_STOPPING:
                 if epoch >= FORCED_EPOCHS - 1:
                     model.eval()
                     if CUR_DATASET == 'PPI':
-                        pred = (model(dataVal)>0.5).int()
+                        out = model(dataVal)
+                        pred = (out>0.5).int()
+                        loss = F.cross_entropy(out, dataVal.y)
                         correct = (pred == dataVal.y).sum()
                         acc = float(int(correct) / int(dataVal.y.shape[0] * num_classes))
                     else:
-                        pred = model(data).argmax(dim=1)
+                        out = model(data)
+                        pred = out.argmax(dim=1)
+                        loss = F.nll_loss(out[data.val_mask], data.y[data.val_mask])
                         correct = (pred[data.val_mask] == data.y[data.val_mask]).sum()
-                        acc = float(int(correct) / int(data.val_mask.sum()))
-                    if acc >= cur_max:
+                        acc = (correct / data.val_mask.sum()).item()
+                    val_losses.append(loss.item())
+                    val_accs.append(acc)
+                    if acc > cur_max or loss.item() < cur_min_loss:
                         if VERBOSE:
                             print('Found new validation maximum at epoch ' + str(epoch + 1) + '!')
-                            print('    Old max: ' + str(cur_max) + '%')
-                            print('    New max: ' + str(acc) + '%')
+                            print('    Old max acc: ' + str(cur_max) + '%')
+                            print('    New max acc: ' + str(acc) + '%')
+                            print('    Old max loss: ' + str(cur_min_loss) + '%')
+                            print('    New max acc: ' + str(loss.item()) + '%')
                             print('')
-                        cur_max = acc
+                        if acc > cur_max and loss.item() < cur_min_loss:
+                            torch.save(model.state_dict(), "./model/cur_model.pt")
+                        cur_max = max(acc, cur_max)
+                        cur_min_loss = min(cur_min_loss, loss.item())
                         stop_counter = 0
-                        file_h = open('./model/cur_model.p', 'wb')
-                        pickle.dump(model, file_h)
-                        file_h.close()
                     else:
                         stop_counter = stop_counter + 1
                         if VERBOSE:
@@ -158,9 +180,6 @@ def main():
                             print('    Current score: ' + str(acc) + '%')
                             print('')
                         if stop_counter >= STOPPING_CRITERIA:
-                            file_h = open('./model/cur_model.p', 'rb')
-                            model = pickle.load(file_h)
-                            file_h.close()
                             if VERBOSE:
                                 print('Stopping training...')
                             stop_training = True
@@ -169,19 +188,30 @@ def main():
                     if not epoch == 0 and (epoch + 1) % LOGGING_FREQUENCY == 0:
                         model.eval()
                         if CUR_DATASET == 'PPI':
-                            pred = (model(dataVal)>0.5).int()
+                            out = model(dataVal)
+                            loss = F.cross_entropy(out, dataVal.y)
+                            pred = (out>0.5).int()
                             correct = (pred == dataVal.y).sum()
                             acc = float(int(correct) / int(dataVal.y.shape[0] * num_classes))
                         else:
-                            pred = model(data).argmax(dim=1)
+                            out = model(data)
+                            pred = out.argmax(dim=1)
+                            loss = F.nll_loss(out[data.val_mask], data.y[data.val_mask])
                             correct = (pred[data.val_mask] == data.y[data.val_mask]).sum()
                             acc = float(int(correct) / int(data.val_mask.sum()))
+                        val_accs.append(acc)
+                        val_losses.append(loss.item())
                         print('Epoch: ' + str(epoch + 1) + ', Validation Accuracy: ' + str(acc) + '%')
                 if epoch >= NUM_EPOCHS - 1:
                     stop_training = True
             epoch = epoch + 1
-
+        gen_graph(train_accs, "train_accuracy", i)
+        gen_graph(train_losses, "train_losses", i)
+        gen_graph(val_accs, "validation_accuracy", i)
+        gen_graph(val_losses, "validation_losses", i)
         model.eval()
+        if USE_EARLY_STOPPING:
+            model.load_state_dict(torch.load("./model/cur_model.pt"))
         if CUR_DATASET == 'PPI':
             pred = (model(dataTest)>0.5).int()
             correct = (pred == dataTest.y).sum()

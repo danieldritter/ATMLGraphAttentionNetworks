@@ -34,22 +34,25 @@ class GraphAttentionLayer(torch_geometric.nn.MessagePassing):
     # Not sure if this should be x_i or x_j
     def message(self, x_j, attention_vals_i, attention_vals_j):
         attention_vals = (attention_vals_i + attention_vals_j)
+        attention_vals = self.attention_relu(attention_vals)
         attention_vals = torch.nn.functional.softmax(attention_vals, dim=1)
         attention_vals = torch.nn.functional.dropout(attention_vals, p=0.6, training=self.training)
-        x_j = x_j.view(-1, self.output_channels, self.num_heads)
+        # drop_x_j = torch.nn.functional.dropout(x_j, p=0.6, training=self.training)
+        drop_x_j = x_j
+        drop_x_j = drop_x_j.view(-1, self.output_channels, self.num_heads)
+        
         if self.concat:
             out_vals = []
         else:
-            avg_x_j = torch.zeros((x_j.shape[0], x_j.shape[1]), device=x_j.device)
+            avg_x_j = torch.zeros((drop_x_j.shape[0], drop_x_j.shape[1]), device=drop_x_j.device)
 
         for i in range(self.num_heads):
             if self.concat:
-                out_vals.append((x_j[:, :, i].T*attention_vals[:,i]).T)
+                out_vals.append((drop_x_j[:, :, i].T*attention_vals[:,i]).T)
             else:
-                avg_x_j += (x_j[:, :, i].T*attention_vals[:,i]).T
+                avg_x_j += (drop_x_j[:, :, i].T*attention_vals[:,i]).T
         if self.concat:
-            out_vals = [self.attention_relu(item) for item in out_vals]
             out = torch.cat(out_vals, dim=1)
         else:
-            out = self.attention_relu(avg_x_j / self.num_heads)
+            out = avg_x_j / self.num_heads
         return out
