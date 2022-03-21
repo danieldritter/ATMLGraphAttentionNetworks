@@ -19,7 +19,7 @@ from GAT import GraphAttentionLayer
 
 
 # Hyper-Parameters
-CUR_DATASET = 'Cora' # Options: Cora, Citeseer, Pubmed, PPI, AmazonComp, AmazonPhotos
+CUR_DATASET = 'Citeseer' # Options: Cora, Citeseer, Pubmed, PPI, AmazonComp, AmazonPhotos
 
 LEARNING_RATE = 0.005
 WEIGHT_DECAY = .0005
@@ -61,9 +61,10 @@ class GATNet(torch.nn.Module):
         global CUR_DATASET
 
         x, edge_index = data.x, data.edge_index
+        x = F.dropout(x, p=0.6, training=self.training)
         x = self.conv1(x, edge_index)
         x = F.elu(x)
-        #x = F.dropout(x, p=0.6, training=self.training)
+        x = F.dropout(x, p=0.6, training=self.training)
         x = self.conv2(x, edge_index)
         if CUR_DATASET == 'PPI':
             x = torch.sigmoid(x)
@@ -87,7 +88,7 @@ def main():
 
         global use_planetoid
         if use_planetoid:
-            dataset = Planetoid('./data', CUR_DATASET)
+            dataset = Planetoid('./data', CUR_DATASET, split="public", num_train_per_class=20)
             num_features = dataset.num_node_features
             num_classes = dataset.num_classes
         elif CUR_DATASET == 'AmazonComp':
@@ -113,7 +114,6 @@ def main():
             dataTest = datasetTest[0].to(device)
         else:
             data = dataset[0]
-            data = T.RandomNodeSplit(split='random', num_train_per_class=20, num_val=500, num_test=1000)(data).to(device)
         data = T.NormalizeFeatures()(data)
         optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
         if VERBOSE:
@@ -159,7 +159,7 @@ def main():
                         acc = (correct / data.val_mask.sum()).item()
                     val_losses.append(loss.item())
                     val_accs.append(acc)
-                    if acc > cur_max or loss.item() < cur_min_loss:
+                    if acc >= cur_max or loss.item() <= cur_min_loss:
                         if VERBOSE:
                             print('Found new validation maximum at epoch ' + str(epoch + 1) + '!')
                             print('    Old max acc: ' + str(cur_max) + '%')
@@ -167,7 +167,7 @@ def main():
                             print('    Old max loss: ' + str(cur_min_loss) + '%')
                             print('    New max acc: ' + str(loss.item()) + '%')
                             print('')
-                        if acc > cur_max and loss.item() < cur_min_loss:
+                        if acc >= cur_max and loss.item() <= cur_min_loss:
                             torch.save(model.state_dict(), "./model/cur_model.pt")
                         cur_max = max(acc, cur_max)
                         cur_min_loss = min(cur_min_loss, loss.item())
