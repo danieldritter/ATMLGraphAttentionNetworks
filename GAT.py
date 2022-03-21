@@ -3,11 +3,11 @@ import torch
 
 class GraphAttentionLayer(torch_geometric.nn.MessagePassing):
 
-    def __init__(self, input_channels, output_channels, num_heads=1, concat=False):
+    def __init__(self, input_channels, output_channels, num_heads=1, concat=False, dropout=0.6):
         super().__init__(aggr='add', node_dim=0)
         self.output_channels = output_channels
         self.num_heads = num_heads
-        self.linear = torch.nn.Linear(input_channels, output_channels*num_heads)
+        self.dropout_val = dropout 
         # Creating attention mechanism in two layers to compute values at node level
         # Avoids having to separately deal with every pairing of nodes 
         self.ws = torch.nn.ModuleList()
@@ -35,7 +35,6 @@ class GraphAttentionLayer(torch_geometric.nn.MessagePassing):
     def forward(self, x, edge_index):
         # Following the GCN tutorial here, but it makes for nodes to be able to attend to themselves?
         edge_index, _ = torch_geometric.utils.add_self_loops(edge_index, num_nodes=x.size(0), fill_value="mean")
-        transformed_nodes = self.linear(x)
         transformed_nodes = [] 
         attention_vals1 = [] 
         attention_vals2 = []
@@ -59,7 +58,7 @@ class GraphAttentionLayer(torch_geometric.nn.MessagePassing):
         attention_vals = self.attention_relu(attention_vals)
         # using torch_geometrics masked softmax implementation here 
         attention_vals = torch_geometric.utils.softmax(attention_vals, index)
-        attention_vals = torch.nn.functional.dropout(attention_vals, p=0.6, training=self.training)
+        attention_vals = torch.nn.functional.dropout(attention_vals, p=self.dropout_val, training=self.training)
         out = x_j * attention_vals.view(attention_vals.shape[0], attention_vals.shape[1], 1)
         if self.concat:
             out = out.reshape(out.shape[0],-1)
