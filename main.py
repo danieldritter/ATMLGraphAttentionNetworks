@@ -64,9 +64,6 @@ class GATNet(torch.nn.Module):
                 self.conv_layers.append(GCNConv(num_hidden_features*num_heads[-2], num_classes, dropout=dropout))
             else:
                 self.conv_layers.append(GCNConv(num_hidden_features, num_classes, dropout=dropout))
-        # elif model_name == 'GIN':
-        #     self.conv1 = GINConv(num_features, HIDDEN_FEATURES)
-        #     self.conv2 = GINConv(HIDDEN_FEATURES, num_classes)
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
@@ -97,7 +94,7 @@ def main():
     parser.add_argument("--dropout_val", type=float, default=0.6)
     parser.add_argument("--use_early_stopping", action='store_true')
     parser.add_argument("--early_stopping_patience", default=100)
-    parser.add_argument("--num_forced_epochs", type=int, default=20)
+    parser.add_argument("--num_forced_epochs", type=int, default=2)
     parser.add_argument("--num_epochs", type=int, default=1000)
     parser.add_argument("--logging_frequency", type=int, default=10)
     parser.add_argument("--num_runs", type=int, default=1)
@@ -108,8 +105,6 @@ def main():
     total_avg = 0.0
     total_avg_list = []
     for i in range(args.num_runs):
-        train_losses = [] 
-        train_accs = [] 
         val_losses = [] 
         val_accs = []
         if args.verbose:
@@ -136,7 +131,8 @@ def main():
             num_features = 50
             num_classes = 121
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        # device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = "cpu"
         model = GATNet(num_features, args.num_hidden_features, args.num_layers, num_classes, args.attention_heads, args.concat_layers, args.model, args.dataset, args.dropout_val).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.l2_lambda)
         if args.verbose:
@@ -161,36 +157,27 @@ def main():
                 optimizer.zero_grad()
                 out = model(batch)
                 if args.dataset == 'PPI':
-                    pred = (out>0.5).int()
-                    loss = F.binary_cross_entropy_with_logits(out.flatten(), batch.y.flatten())
-                    acc = f1_score(batch.y.cpu().detach().flatten(), pred.cpu().detach().flatten(), average="micro")
-                    # correct = (pred == data.y).sum()
-                    # acc = float(int(correct) / int(data.y.shape[0] * num_classes))
+                    loss = F.binary_cross_entropy(out, batch.y)
                 else:
-                    pred = out.argmax(dim=1)
                     loss = F.nll_loss(out[batch.train_mask], batch.y[batch.train_mask])
-                    correct = (pred[batch.train_mask] == batch.y[batch.train_mask]).sum()
-                    acc = (correct / batch.train_mask.sum()).item()
-                train_losses.append(loss.item())
-                train_accs.append(acc)
                 loss.backward()
                 optimizer.step()
+            model.eval()                
             if args.use_early_stopping:
                 if epoch >= args.num_forced_epochs - 1:
-                    model.eval()
                     losses = 0.0
                     accs = 0.0
+                    preds = []
+                    labels = []
                     for batch in val_loader:
                         batch = batch.to(device)
                         out = model(batch)
                         if args.dataset == 'PPI':
                             pred = (out>0.5).int()
-                            loss = F.binary_cross_entropy_with_logits(out.flatten(), batch.y.flatten())
+                            preds.append(pred)
+                            labels.append(batch.y)
+                            loss = F.binary_cross_entropy(out, batch.y)
                             losses += loss.item()
-                            # correct = (pred == dataVal.y).sum()
-                            # acc = float(int(correct) / int(dataVal.y.shape[0] * num_classes))
-                            acc = f1_score(batch.y.cpu().detach().flatten(), pred.cpu().detach().flatten(), average="micro")
-                            accs += acc 
                         else:
                             pred = out.argmax(dim=1)
                             loss = F.nll_loss(out[batch.val_mask], batch.y[batch.val_mask])
@@ -198,27 +185,32 @@ def main():
                             correct = (pred[batch.val_mask] == batch.y[batch.val_mask]).sum()
                             acc = (correct / batch.val_mask.sum()).item()
                             accs += acc
-                    val_losses.append(losses/len(val_loader))
-                    val_accs.append(accs/len(val_loader))
-                    if acc >= cur_max or loss.item() <= cur_min_loss:
+                    if args.dataset == "PPI":
+                        avg_acc = f1_score(torch.cat(labels,dim=0).flatten(), torch.cat(preds,dim=0).flatten(), average="micro")
+                    else:
+                        avg_acc = accs/len(val_loader)
+                    avg_loss = losses/len(val_loader)
+                    val_losses.append(avg_loss)
+                    val_accs.append(avg_acc)
+                    if avg_acc >= cur_max or avg_loss <= cur_min_loss:
                         if args.verbose:
                             print('Found new validation maximum at epoch ' + str(epoch + 1) + '!')
                             print('    Old max acc: ' + str(cur_max) + '%')
-                            print('    New max acc: ' + str(acc) + '%')
+                            print('    New max acc: ' + str(avg_acc) + '%')
                             print('    Old max loss: ' + str(cur_min_loss) + '%')
-                            print('    New max acc: ' + str(loss.item()) + '%')
+                            print('    New max loss: ' + str(avg_loss) + '%')
                             print('')
-                        if acc >= cur_max and loss.item() <= cur_min_loss:
+                        if avg_acc >= cur_max and avg_loss <= cur_min_loss:
                             torch.save(model.state_dict(), "./model/cur_model.pt")
-                        cur_max = max(acc, cur_max)
-                        cur_min_loss = min(cur_min_loss, loss.item())
+                        cur_max = max(avg_acc, cur_max)
+                        cur_min_loss = min(cur_min_loss, avg_loss)
                         stop_counter = 0
                     else:
                         stop_counter = stop_counter + 1
                         if args.verbose:
                             print('Did not do better at epoch ' + str(epoch + 1) + '.')
                             print('    Old max: ' + str(cur_max) + '%')
-                            print('    Current score: ' + str(acc) + '%')
+                            print('    Current score: ' + str(avg_acc) + '%')
                             print('')
                         if stop_counter >= args.early_stopping_patience:
                             if args.verbose:
@@ -227,17 +219,16 @@ def main():
             else:
                 if args.verbose:
                     if not epoch == 0 and (epoch + 1) % args.logging_frequency == 0:
-                        model.eval()
                         losses = 0.0 
                         accs = 0.0 
                         for batch in val_loader:
                             batch = batch.to(device)
                             out = model(batch)
                             if args.dataset == 'PPI':
-                                loss = F.binary_cross_entropy_with_logits(out.flatten(), batch.y.flatten())
+                                loss = F.binary_cross_entropy(out, batch.y)
                                 losses += loss.item()
                                 pred = (out>0.5).int()
-                                acc = f1_score(batch.y.cpu().detach().flatten(), pred.cpu().detach().flatten(), average="micro")
+                                acc = f1_score(batch.y.cpu().detach(), pred.cpu().detach(), average="micro")
                                 accs += acc
                             else:
                                 pred = out.argmax(dim=1)
@@ -252,8 +243,6 @@ def main():
                 if epoch >= args.num_epochs - 1:
                     stop_training = True
             epoch = epoch + 1
-        gen_graph(train_accs, "train_accuracy", i)
-        gen_graph(train_losses, "train_losses", i)
         gen_graph(val_accs, "validation_accuracy", i)
         gen_graph(val_losses, "validation_losses", i)
         model.eval()
@@ -264,9 +253,7 @@ def main():
             for batch in test_loader:
                 batch = batch.to(device)
                 pred = (model(batch)>0.5).int()
-                # correct = (pred == dataTest.y).sum()
-                # acc = float(int(correct) / int(dataTest.y.shape[0] * num_classes))
-                acc = f1_score(batch.y.cpu().detach().flatten(), pred.cpu().detach().flatten(), average="micro")
+                acc = f1_score(batch.y.cpu().detach(), pred.cpu().detach(), average="micro")
                 accs += acc
         else:
             for batch in test_loader:
