@@ -1,5 +1,6 @@
 import pickle
 import torch
+import numpy as np 
 from utils import gen_graph
 import torch.nn.functional as F
 import torch_geometric.transforms as T
@@ -10,7 +11,7 @@ from GATNet import GATNet
 
 
 # Hyper-Parameters
-CUR_DATASET = 'Cora' # Options: Cora, Citeseer, Pubmed, PPI, AmazonComp, AmazonPhotos
+CUR_DATASET = 'Cora' # Options: Cora, Citeseer, Pubmed, AmazonComp, AmazonPhotos
 
 LEARNING_RATE = 0.005
 WEIGHT_DECAY = .0005
@@ -83,8 +84,8 @@ def main():
                             print('Found new validation maximum at epoch ' + str(epoch + 1) + '!')
                             print('    Old max acc: ' + str(cur_max) + '%')
                             print('    New max acc: ' + str(acc) + '%')
-                            print('    Old max loss: ' + str(cur_min_loss) + '%')
-                            print('    New max acc: ' + str(loss.item()) + '%')
+                            print('    Old min loss: ' + str(cur_min_loss) + '%')
+                            print('    New min loss: ' + str(loss.item()) + '%')
                             print('')
                         if acc >= cur_max and loss.item() <= cur_min_loss:
                             torch.save(model.state_dict(), "./model/cur_model.pt")
@@ -113,14 +114,10 @@ def main():
                         acc = float(int(correct) / int(data.val_mask.sum()))
                         val_accs.append(acc)
                         val_losses.append(loss.item())
-                        print('Epoch: ' + str(epoch + 1) + ', Validation Accuracy: ' + str(acc) + '%')
+                        print('Epoch: ' + str(epoch + 1) + ', Validation Accuracy: ' + str(acc.item()) + '%')
                 if epoch >= NUM_EPOCHS - 1:
                     stop_training = True
             epoch = epoch + 1
-        gen_graph(train_accs, "train_accuracy", i)
-        gen_graph(train_losses, "train_losses", i)
-        gen_graph(val_accs, "validation_accuracy", i)
-        gen_graph(val_losses, "validation_losses", i)
         model.eval()
         if USE_EARLY_STOPPING:
             model.load_state_dict(torch.load("./model/cur_model.pt"))
@@ -131,9 +128,11 @@ def main():
         print(f'Test Accuracy: {acc:.4f}%')
         total_avg += acc
         total_avg_list.append(acc)
-
+    avg_acc = total_avg/NUM_RUNS
+    stddev = np.stddev(total_avg_list)
+    ci = 1.96*(stddev/np.sqrt(len(total_avg_list)))
     print('All Results: ' + str(total_avg_list))
-    print(f'Total Test Average: {total_avg/NUM_RUNS}')
+    print(f'Total Test Average: {avg_acc} +/- {ci}')
 
 if __name__ == '__main__':
     main()

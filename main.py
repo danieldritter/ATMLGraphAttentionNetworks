@@ -21,6 +21,9 @@ from GAT import GraphAttentionLayer
 import argparse 
 
 
+## Deprecated now: Use run_inductive.py or run_gnn_benchmark.py
+
+
 # Define overall network
 class GATNet(torch.nn.Module):
     def __init__(self, model_name, dataset_name, num_features):
