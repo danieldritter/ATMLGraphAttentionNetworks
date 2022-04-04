@@ -51,8 +51,6 @@ class GraphAttentionLayer(torch_geometric.nn.MessagePassing):
         attention_vals2 = torch.stack(attention_vals2).squeeze(-1).T
         return self.propagate(edge_index, x=transformed_nodes, attention_vals=(attention_vals1, attention_vals2)) + self.bias
 
-    # Just a weighted sum of attention values and node features
-    # Not sure if this should be x_i or x_j
     def message(self, x_j, attention_vals_j, attention_vals_i, index):
         attention_vals = attention_vals_i + attention_vals_j
         attention_vals = self.attention_relu(attention_vals)

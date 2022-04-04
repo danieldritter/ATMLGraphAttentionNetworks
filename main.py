@@ -23,60 +23,69 @@ import argparse
 
 # Define overall network
 class GATNet(torch.nn.Module):
-    def __init__(self, num_features, num_hidden_features, num_layers, num_classes, num_heads, concats, model_name, dataset_name, dropout=0.6):
+    def __init__(self, model_name, dataset_name, num_features):
         super().__init__()
-        self.dropout_val = dropout 
-        self.conv_layers = torch.nn.ModuleList()
         self.dataset_name = dataset_name
-        self.num_layers = num_layers
-        if model_name == "GCN":
-            concats = [False for i in range(num_layers)]
         if model_name == 'GAT':
-            self.conv_layers.append(GraphAttentionLayer(num_features, num_hidden_features, num_heads[0], concat=concats[0], dropout=dropout))
-            for i in range(1,num_layers-1):
-                if concats[i-1]:
-                    self.conv_layers.append(GraphAttentionLayer(num_hidden_features*num_heads[i-1], num_hidden_features, num_heads[i], concat=concats[i], dropout=dropout))
-                else:
-                    self.conv_layers.append(GraphAttentionLayer(num_hidden_features, num_hidden_features, num_heads=num_heads[i], concat=concats[i], dropout=dropout))
-            if concats[-2]:
-                self.conv_layers.append(GraphAttentionLayer(num_hidden_features*num_heads[-2], num_classes, num_heads[-1], concat=concats[-1], dropout=dropout))
-            else:
-                self.conv_layers.append(GraphAttentionLayer(num_hidden_features, num_classes, num_heads[-1], concat=concats[-1], dropout=dropout))
+            if dataset_name == "PPI":
+                self.conv1 = GraphAttentionLayer(num_features, 256, num_heads=4, concat=True, dropout=0.0)
+                self.conv2 = GraphAttentionLayer(1024,256,num_heads=4,concat=True,dropout=0.0)
+                self.conv3 = GraphAttentionLayer(1024,121,num_heads=6,concat=False,dropout=0.0)
+            elif dataset_name == "Cora":
+                self.conv1 = GraphAttentionLayer(num_features, 8, num_heads=8, concat=True, dropout=0.6)
+                self.conv2 = GraphAttentionLayer(64,7,num_heads=1,concat=False,dropout=0.6)
+            elif dataset_name == "Citeseer":
+                self.conv1 = GraphAttentionLayer(num_features, 8, num_heads=8, concat=True, dropout=0.6)
+                self.conv2 = GraphAttentionLayer(64,6,num_heads=1,concat=False,dropout=0.6)
+            elif dataset_name == "Pubmed":
+                self.conv1 = GraphAttentionLayer(num_features,8,num_heads=8,concat=True,dropout=0.6)
+                self.conv2 = GraphAttentionLayer(64,3,num_heads=8,concat=False,dropout=0.6)
         elif model_name == 'GATGeometric':
-            self.conv_layers.append(GATConv(num_features, num_hidden_features, num_heads[0], concat=concats[0], dropout=dropout))
-            for i in range(1,num_layers-1):
-                if concats[i-1]:
-                    self.conv_layers.append(GATConv(num_hidden_features*num_heads[i-1], num_hidden_features, num_heads[i], concat=concats[i], dropout=dropout))
-                else:
-                    self.conv_layers.append(GATConv(num_hidden_features, num_hidden_features, heads=num_heads[i], concat=concats[i], dropout=dropout))
-            if concats[-2]:
-                self.conv_layers.append(GATConv(num_hidden_features*num_heads[-2], num_classes, heads=num_heads[-1], concat=concats[-1], dropout=dropout))
-            else:
-                self.conv_layers.append(GATConv(num_hidden_features, num_classes, heads=num_heads[-1], concat=concats[-1], dropout=dropout))
+            if dataset_name == "PPI":
+                self.conv1 = GATConv(num_features, 256, heads=4, concat=True, dropout=0.0)
+                self.conv2 = GATConv(1024,256,heads=4,concat=True,dropout=0.0)
+                self.conv3 = GATConv(1024,121,heads=6,concat=False,dropout=0.0)
+            elif dataset_name == "Cora":
+                self.conv1 = GATConv(num_features, 8, heads=8, concat=True, dropout=0.6)
+                self.conv2 = GATConv(64,7,heads=1,concat=False,dropout=0.6)
+            elif dataset_name == "Citeseer":
+                self.conv1 = GATConv(num_features, 8, heads=8, concat=True, dropout=0.6)
+                self.conv2 = GATConv(64,6,heads=1,concat=False,dropout=0.6)   
+            elif dataset_name == "Pubmed":
+                self.conv1 = GATConv(num_features,8,heads=8,concat=True,dropout=0.6)
+                self.conv2 = GATConv(64,3,heads=8,concat=False,dropout=0.6)
         elif model_name == 'GCN':
-            self.conv_layers.append(GCNConv(num_features, num_hidden_features*num_heads[0], dropout=dropout))
-            for i in range(num_layers-2):
-                if concats[i-1]:
-                    self.conv_layers.append(GCNConv(num_hidden_features*num_heads[i-1], num_hidden_features*num_heads[i], dropout=dropout))
-                else:
-                    self.conv_layers.append(GCNConv(num_hidden_features, num_hidden_features*num_heads[i], dropout=dropout))
-            if concats[-2]:
-                self.conv_layers.append(GCNConv(num_hidden_features*num_heads[-2], num_classes, dropout=dropout))
-            else:
-                self.conv_layers.append(GCNConv(num_hidden_features, num_classes, dropout=dropout))
+            if self.dataset_name == "PPI":
+                print("GCN Benchmark not used for PPI")
+                exit()
+            elif dataset_name == "Cora":
+                self.conv1 = GCNConv(num_features, 64)
+                self.conv2 = GCNConv(64,7)
+            elif dataset_name == "Citeseer":
+                self.conv1 = GCNConv(num_features,64)
+                self.conv2 = GCNConv(64,6)
+            elif dataset_name == "Pubmed":
+                self.conv1 = GCNConv(num_features,64)
+                self.conv2 = GCNConv(64,3)
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
-        for i in range(self.num_layers):
-            x = F.dropout(x, p=self.dropout_val, training=self.training)
-            x = self.conv_layers[i](x, edge_index)
+        if self.dataset_name == "PPI":
+            x = self.conv1(x, edge_index)
             x = F.elu(x)
-        if self.dataset_name == 'PPI':
+            x = self.conv2(x, edge_index)
+            x = F.elu(x)
+            x = self.conv3(x, edge_index)
             x = torch.sigmoid(x)
+            return x 
         else:
-            x = F.log_softmax(x, dim=1)
-
-        return x
+            x = F.dropout(x,p=0.6, training=self.training)
+            x = self.conv1(x, edge_index)
+            x = F.elu(x)
+            x = F.dropout(x,p=0.6,training=self.training)
+            x = self.conv2(x, edge_index)
+            x = F.log_softmax(x,dim=1)
+            return x 
 
 
 # Main code
@@ -84,30 +93,36 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default="Cora")
     parser.add_argument("--model", default="GAT")
-    parser.add_argument("--learning_rate", type=float, default=.005)
-    parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--num_hidden_features", type=int, default=8)
-    parser.add_argument("--num_layers", type=int, default=2)
-    parser.add_argument("--attention_heads", type=int, nargs="+")
-    parser.add_argument("--concat_layers", type=int, nargs="+")
-    parser.add_argument("--l2_lambda", type=float, default=.0005)
-    parser.add_argument("--dropout_val", type=float, default=0.6)
-    parser.add_argument("--use_early_stopping", action='store_true')
-    parser.add_argument("--early_stopping_patience", default=100)
-    parser.add_argument("--num_forced_epochs", type=int, default=2)
-    parser.add_argument("--num_epochs", type=int, default=1000)
-    parser.add_argument("--logging_frequency", type=int, default=10)
-    parser.add_argument("--num_runs", type=int, default=1)
-    parser.add_argument("--verbose", action='store_true')
     args = parser.parse_args()
-    args.concat_layers = [True if x == 1 else False for x in args.concat_layers]
-    assert len(args.attention_heads) == args.num_layers == len(args.concat_layers)
+    use_early_stopping = True 
+    early_stopping_patience = 100 
+    num_runs = 5
+    num_epochs = 10000
+    verbose = True 
+    logging_frequency = 10
+    num_forced_epochs = 20 
+    if args.dataset == "PPI":
+        lr = .005 
+        l2_lambda = 0.0 
+        dropout = 0.0 
+        batch_size = 1 
+    elif args.dataset == "Pubmed":
+        lr = .01
+        l2_lambda = .001 
+        dropout = 0.6
+        batch_size = 1
+    else:
+        lr = .005 
+        l2_lambda = .0005 
+        dropout = 0.6 
+        batch_size = 1 
+
     total_avg = 0.0
     total_avg_list = []
-    for i in range(args.num_runs):
+    for i in range(num_runs):
         val_losses = [] 
         val_accs = []
-        if args.verbose:
+        if verbose:
             print('Starting run number: ' + str(i + 1))
         
         use_planetoid = args.dataset == 'Cora' or args.dataset == 'Citeseer' or args.dataset == 'Pubmed'
@@ -130,19 +145,18 @@ def main():
             datasetTest = PPI('./data', 'test')
             num_features = 50
             num_classes = 121
-
-        # device = "cuda" if torch.cuda.is_available() else "cpu"
-        device = "cpu"
-        model = GATNet(num_features, args.num_hidden_features, args.num_layers, num_classes, args.attention_heads, args.concat_layers, args.model, args.dataset, args.dropout_val).to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.l2_lambda)
-        if args.verbose:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        # device = "cpu"
+        model = GATNet(args.model, args.dataset, num_features).to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=l2_lambda)
+        if verbose:
             print('Starting training...')
         if args.dataset == "PPI":
-            train_loader = DataLoader(datasetTrain, batch_size=args.batch_size, shuffle=True)
-            val_loader = DataLoader(datasetVal, batch_size=args.batch_size)
-            test_loader = DataLoader(datasetTest, batch_size=args.batch_size)
+            train_loader = DataLoader(datasetTrain, batch_size=batch_size, shuffle=True)
+            val_loader = DataLoader(datasetVal, batch_size=batch_size)
+            test_loader = DataLoader(datasetTest, batch_size=batch_size)
         else:
-            train_loader = DataLoader(dataset, batch_size=1, shuffle=True)
+            train_loader = DataLoader(dataset, batch_size=batch_size)
             val_loader = train_loader 
             test_loader = train_loader 
         epoch = 0
@@ -163,8 +177,8 @@ def main():
                 loss.backward()
                 optimizer.step()
             model.eval()                
-            if args.use_early_stopping:
-                if epoch >= args.num_forced_epochs - 1:
+            if use_early_stopping:
+                if epoch >= num_forced_epochs - 1:
                     losses = 0.0
                     accs = 0.0
                     preds = []
@@ -193,7 +207,7 @@ def main():
                     val_losses.append(avg_loss)
                     val_accs.append(avg_acc)
                     if avg_acc >= cur_max or avg_loss <= cur_min_loss:
-                        if args.verbose:
+                        if verbose:
                             print('Found new validation maximum at epoch ' + str(epoch + 1) + '!')
                             print('    Old max acc: ' + str(cur_max) + '%')
                             print('    New max acc: ' + str(avg_acc) + '%')
@@ -207,18 +221,18 @@ def main():
                         stop_counter = 0
                     else:
                         stop_counter = stop_counter + 1
-                        if args.verbose:
+                        if verbose:
                             print('Did not do better at epoch ' + str(epoch + 1) + '.')
                             print('    Old max: ' + str(cur_max) + '%')
                             print('    Current score: ' + str(avg_acc) + '%')
                             print('')
-                        if stop_counter >= args.early_stopping_patience:
-                            if args.verbose:
+                        if stop_counter >= early_stopping_patience:
+                            if verbose:
                                 print('Stopping training...')
                             stop_training = True
             else:
-                if args.verbose:
-                    if not epoch == 0 and (epoch + 1) % args.logging_frequency == 0:
+                if verbose:
+                    if not epoch == 0 and (epoch + 1) % logging_frequency == 0:
                         losses = 0.0 
                         accs = 0.0 
                         for batch in val_loader:
@@ -240,13 +254,13 @@ def main():
                         val_accs.append(accs/len(val_loader))
                         val_losses.append(losses/len(val_loader))
                         print('Epoch: ' + str(epoch + 1) + ', Validation Accuracy: ' + str(acc) + '%')
-                if epoch >= args.num_epochs - 1:
+                if epoch >= num_epochs - 1:
                     stop_training = True
             epoch = epoch + 1
         gen_graph(val_accs, "validation_accuracy", i)
         gen_graph(val_losses, "validation_losses", i)
         model.eval()
-        if args.use_early_stopping:
+        if use_early_stopping:
             model.load_state_dict(torch.load("./model/cur_model.pt"))
         if args.dataset == 'PPI':
             accs = 0.0 
@@ -267,7 +281,7 @@ def main():
         total_avg_list.append(accs/len(test_loader))
 
     print('All Results: ' + str(total_avg_list))
-    print(f'Total Test Average: {total_avg/args.num_runs}')
+    print(f'Total Test Average: {total_avg/num_runs}')
 
 if __name__ == '__main__':
     main()
