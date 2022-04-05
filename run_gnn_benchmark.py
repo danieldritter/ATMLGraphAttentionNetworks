@@ -1,7 +1,8 @@
 import pickle
 import torch
 import numpy as np 
-from utils import gen_graph
+from sklearn.metrics import confusion_matrix
+from sklearn.utils import compute_class_weight
 import torch.nn.functional as F
 import torch_geometric.transforms as T
 from torch_geometric.datasets import Planetoid, GNNBenchmarkDataset
@@ -18,7 +19,7 @@ WEIGHT_DECAY = 0.0
 CUR_MODEL = 'GAT' # Options: GAT, GCN
 CUR_DATASET = "PATTERN" # Options: PATTERN
 
-USE_EARLY_STOPPING = False
+USE_EARLY_STOPPING = True
 FORCED_EPOCHS = 1
 EARLY_STOPPING_PATIENCE = 1
 NUM_EPOCHS = 1
@@ -27,6 +28,26 @@ NUM_RUNS = 5
 BATCH_SIZE = 16
 VERBOSE = True
 
+def accuracy_SBM(scores, targets):
+    S = targets.cpu().numpy()
+    C = np.argmax( torch.nn.Softmax(dim=1)(scores).cpu().detach().numpy() , axis=1 )
+    CM = confusion_matrix(S,C).astype(np.float32)
+    nb_classes = CM.shape[0]
+    targets = targets.cpu().detach().numpy()
+    nb_non_empty_classes = 0
+    pr_classes = np.zeros(nb_classes)
+    for r in range(nb_classes):
+        cluster = np.where(targets==r)[0]
+        if cluster.shape[0] != 0:
+            pr_classes[r] = CM[r,r]/ float(cluster.shape[0])
+            if CM[r,r]>0:
+                nb_non_empty_classes += 1
+        else:
+            pr_classes[r] = 0.0
+    acc = 100.* np.sum(pr_classes)/ float(nb_classes)
+    return acc
+
+# TODO: Compute training weight and pass in as weight to nll_loss to solve balance issues. 
 
 if __name__ == "__main__":
     total_avg = 0.0
@@ -39,16 +60,29 @@ if __name__ == "__main__":
     test_loader = DataLoader(datasetTest, batch_size=BATCH_SIZE)
     num_features = 3
     num_classes = 2
-    total = 0 
-    pos = 0
+    labels = []
+    pos = 0 
+    total = 0
     for item in train_loader:
-        total += item.y.shape[0]
+        labels.append(item.y)
         pos += torch.sum(item.y)
-    print(pos)
-    print(total)
-    print(pos/total)
-    exit()
+        total += item.y.shape[0]
+    labels = torch.cat(labels).numpy()
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    # weights = torch.tensor(compute_class_weight("balanced",classes=[0,1],y=labels)).to(device).float()
+
+    # Their implementation 
+    V = label.size(0)
+    label_count = torch.bincount(label)
+    label_count = label_count[label_count.nonzero()].squeeze()
+    cluster_sizes = torch.zeros(self.n_classes).long().to(self.device)
+    cluster_sizes[torch.unique(label)] = label_count
+    weight = (V - cluster_sizes).float() / V
+    weight *= (cluster_sizes>0).float()
+
+    pos_weight = (total-pos)/total
+    neg_weight = (total - (1-pos))/total 
+    weights = torch.tensor([neg_weight,pos_weight]).to(device)
     for i in range(NUM_RUNS):
         val_losses = [] 
         val_accs = []
@@ -70,7 +104,7 @@ if __name__ == "__main__":
                 batch = batch.to(device)
                 optimizer.zero_grad()
                 out = model(batch)
-                loss = F.nll_loss(out, batch.y)
+                loss = F.nll_loss(out, batch.y,weight=weights)
                 loss.backward()
                 optimizer.step()
             model.eval()                
@@ -84,10 +118,13 @@ if __name__ == "__main__":
                         batch = batch.to(device)
                         out = model(batch)
                         pred = out.argmax(dim=1)
-                        loss = F.nll_loss(out, batch.y)
+                        loss = F.nll_loss(out, batch.y,weight=weights)
                         losses += loss.item()
                         total += batch.y.shape[0]
-                        correct += torch.sum(pred == batch.y)        
+                        correct += torch.sum(pred == batch.y) 
+                        acc = accuracy_SBM(out,batch.y)
+                        accs += acc 
+                    print(accs/len(val_loader))       
                     avg_acc = correct/total
                     avg_loss = losses/len(val_loader)
                     val_losses.append(avg_loss)

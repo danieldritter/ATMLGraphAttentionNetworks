@@ -1,7 +1,6 @@
 import pickle
 import torch
 import numpy as np 
-from utils import gen_graph
 import torch.nn.functional as F
 import torch_geometric.transforms as T
 from torch_geometric.datasets import Planetoid, PPI, Amazon
@@ -11,19 +10,18 @@ from GATNet import GATNet
 
 
 # Hyper-Parameters
-CUR_DATASET = 'Cora' # Options: Cora, Citeseer, Pubmed, AmazonComp, AmazonPhotos
+CUR_DATASET = 'AmazonComp' # Options: Cora, Citeseer, Pubmed, AmazonComp, AmazonPhotos
 
-LEARNING_RATE = 0.005
+LEARNING_RATE = 0.01
 WEIGHT_DECAY = .0005
-HIDDEN_FEATURES = 8
-CUR_MODEL = 'GAT' # Options: GAT, GATGeometric, GCN, GIN
+CUR_MODEL = 'GCN' # Options: GAT, GCN
 
 USE_EARLY_STOPPING = True
 FORCED_EPOCHS = 20
 EARLY_STOPPING_PATIENCE = 100
 NUM_EPOCHS = 10000
 LOGGING_FREQUENCY = 10
-NUM_RUNS = 5
+NUM_RUNS = 20
 
 VERBOSE = True
 
@@ -40,14 +38,27 @@ def main():
         val_accs = []
         if VERBOSE:
             print('Starting run number: ' + str(i + 1))
-
-        dataset = Planetoid('./data', CUR_DATASET, split="public", num_train_per_class=20)
-        num_features = dataset.num_node_features
-        num_classes = dataset.num_classes
+        if CUR_DATASET == "Cora" or CUR_DATASET == "Citeseer" or CUR_DATASET == "Pubmed":
+            dataset = Planetoid('./data', CUR_DATASET, split="public", num_train_per_class=20)
+            num_features = dataset.num_node_features
+            num_classes = dataset.num_classes
+        elif CUR_DATASET == 'AmazonComp':
+            dataset = Amazon('./data', 'Computers')
+            num_features = 767
+            num_classes = 10
+        elif CUR_DATASET == 'AmazonPhotos':
+            dataset = Amazon('./data', 'Photo')
+            num_features = 745
+            num_classes = 8
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model = GATNet(CUR_MODEL,CUR_DATASET,num_features).to(device)
         data = dataset[0]
-        data = T.NormalizeFeatures()(data).to(device)
+        if CUR_DATASET == "AmazonComp" or CUR_DATASET == "AmazonPhotos":
+            data = T.RandomNodeSplit(num_val=0.1, num_test=0.2)(data).to(device)
+        else:
+            data = T.NormalizeFeatures()(data).to(device)
+
+        
         optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
         if VERBOSE:
             print('Starting training...')
@@ -87,7 +98,7 @@ def main():
                             print('    Old min loss: ' + str(cur_min_loss) + '%')
                             print('    New min loss: ' + str(loss.item()) + '%')
                             print('')
-                        if acc >= cur_max and loss.item() <= cur_min_loss:
+                        if acc > cur_max and loss.item() < cur_min_loss:
                             torch.save(model.state_dict(), "./model/cur_model.pt")
                         cur_max = max(acc, cur_max)
                         cur_min_loss = min(cur_min_loss, loss.item())
@@ -129,7 +140,7 @@ def main():
         total_avg += acc
         total_avg_list.append(acc)
     avg_acc = total_avg/NUM_RUNS
-    stddev = np.stddev(total_avg_list)
+    stddev = np.sqrt(np.var(total_avg_list))
     ci = 1.96*(stddev/np.sqrt(len(total_avg_list)))
     print('All Results: ' + str(total_avg_list))
     print(f'Total Test Average: {avg_acc} +/- {ci}')
