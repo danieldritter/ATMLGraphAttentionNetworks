@@ -10,11 +10,11 @@ from GATNet import GATNet
 
 
 # Hyper-Parameters
-CUR_DATASET = 'AmazonComp' # Options: Cora, Citeseer, Pubmed, AmazonComp, AmazonPhotos
+CUR_DATASET = 'Citeseer' # Options: Cora, Citeseer, Pubmed, AmazonComp, AmazonPhotos
 
-LEARNING_RATE = 0.01
+LEARNING_RATE = 0.005
 WEIGHT_DECAY = .0005
-CUR_MODEL = 'GCN' # Options: GAT, GCN
+CUR_MODEL = 'GAT' # Options: GAT, GCN
 
 USE_EARLY_STOPPING = True
 FORCED_EPOCHS = 20
@@ -54,10 +54,11 @@ def main():
         model = GATNet(CUR_MODEL,CUR_DATASET,num_features).to(device)
         data = dataset[0]
         if CUR_DATASET == "AmazonComp" or CUR_DATASET == "AmazonPhotos":
-            data = T.RandomNodeSplit(num_val=0.1, num_test=0.2)(data).to(device)
-        else:
+            data = T.RandomNodeSplit("test_rest", num_val=0.1, num_train_per_class=20)(data).to(device)
+        elif CUR_DATASET == "Cora" or CUR_DATASET == "Citeseer":
             data = T.NormalizeFeatures()(data).to(device)
-
+        else:
+            data = data.to(device)
         
         optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
         if VERBOSE:

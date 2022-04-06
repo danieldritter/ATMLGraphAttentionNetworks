@@ -2,8 +2,9 @@ import pickle
 import torch
 import torch.nn.functional as F
 import torch_geometric.transforms as T
+from torch_scatter import scatter_mean
 from torch_geometric.datasets import Planetoid
-from torch_geometric.nn import GCNConv
+from torch_geometric.nn import GCNConv, GATConv
 from torch_geometric.loader import DataLoader
 from sklearn.metrics import f1_score 
 from GAT import GraphAttentionLayer
@@ -14,10 +15,11 @@ class GATNet(torch.nn.Module):
         self.dataset_name = dataset_name
         self.model_name = model_name
         if model_name == 'GAT':
-            if dataset_name == "PATTERN":
-                self.conv1 = GraphAttentionLayer(num_features, 38, num_heads=8, concat=True, dropout=0.0)
-                self.conv2 = GraphAttentionLayer(304,38,num_heads=8,concat=True,dropout=0.0)
-                self.conv3 = GraphAttentionLayer(304,2,num_heads=8,concat=False,dropout=0.0)
+            if dataset_name == "CIFAR10":
+                self.conv1 = GraphAttentionLayer(num_features, 8, num_heads=8, concat=True, dropout=0.6)
+                self.conv2 = GraphAttentionLayer(64,8,num_heads=8,concat=True,dropout=0.6)
+                self.lin1 = torch.nn.Linear(64,64)
+                self.lin2 = torch.nn.Linear(64,10)
             elif dataset_name == "Cora":
                 self.conv1 = GraphAttentionLayer(num_features, 8, num_heads=8, concat=True, dropout=0.6)
                 self.conv2 = GraphAttentionLayer(64,7,num_heads=1,concat=False,dropout=0.6)
@@ -34,10 +36,11 @@ class GATNet(torch.nn.Module):
                 self.conv1 = GraphAttentionLayer(num_features,8,num_heads=8,concat=True,dropout=0.6)
                 self.conv2 = GraphAttentionLayer(64,8,num_heads=8,concat=False,dropout=0.6)
         elif model_name == 'GCN':
-            if self.dataset_name == "PATTERN":
-                self.conv1 = GCNConv(num_features,304)
-                self.conv2 = GCNConv(304,304)
-                self.conv3 = GCNConv(304,2)
+            if self.dataset_name == "CIFAR10":
+                self.conv1 = GCNConv(num_features,64)
+                self.conv2 = GCNConv(64,64)
+                self.lin1 = torch.nn.Linear(64,64)
+                self.lin2 = torch.nn.Linear(64,10)
             elif dataset_name == "Cora":
                 self.conv1 = GCNConv(num_features, 64)
                 self.conv2 = GCNConv(64,7)
@@ -56,7 +59,7 @@ class GATNet(torch.nn.Module):
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
-        if self.dataset_name == "PATTERN":
+        if self.dataset_name == "CIFAR10":
             x = self.conv1(x, edge_index)
             if self.model_name == "GCN":
                 x = F.relu(x)
@@ -67,8 +70,9 @@ class GATNet(torch.nn.Module):
                 x = F.relu(x)
             else:
                 x = F.elu(x)
-            x = self.conv3(x, edge_index)
-            x = F.log_softmax(x, dim=1)
+            x = scatter_mean(x, data.batch, dim=0)
+            x = F.relu(self.lin1(x))
+            x = F.log_softmax(self.lin2(x), dim=1)
             return x 
         else:
             x = F.dropout(x,p=0.6, training=self.training)
