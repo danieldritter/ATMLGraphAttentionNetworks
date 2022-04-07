@@ -16,8 +16,8 @@ class GATNet(torch.nn.Module):
         self.model_name = model_name
         if model_name == 'GAT':
             if dataset_name == "CIFAR10":
-                self.conv1 = GraphAttentionLayer(num_features, 8, num_heads=8, concat=True, dropout=0.6)
-                self.conv2 = GraphAttentionLayer(64,8,num_heads=8,concat=True,dropout=0.6)
+                self.conv1 = GraphAttentionLayer(num_features, 8, num_heads=8, concat=True, dropout=0.0)
+                self.conv2 = GraphAttentionLayer(64,8,num_heads=8,concat=True,dropout=0.0)
                 self.lin1 = torch.nn.Linear(64,64)
                 self.lin2 = torch.nn.Linear(64,10)
             elif dataset_name == "Cora":
