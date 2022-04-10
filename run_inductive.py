@@ -8,10 +8,8 @@ from torch_geometric.nn import GATConv, GCNConv, GINConv
 from GAT import GraphAttentionLayer
 from GATNet import GATNet
 
-
 # Hyper-Parameters
 CUR_DATASET = 'Citeseer' # Options: Cora, Citeseer, Pubmed, AmazonComp, AmazonPhotos
-
 LEARNING_RATE = 0.005
 WEIGHT_DECAY = .0005
 CUR_MODEL = 'GAT' # Options: GAT, GCN
@@ -24,7 +22,6 @@ LOGGING_FREQUENCY = 10
 NUM_RUNS = 20
 
 VERBOSE = True
-
 
 
 # Main code
@@ -51,7 +48,8 @@ def main():
             num_features = 745
             num_classes = 8
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        model = GATNet(CUR_MODEL,CUR_DATASET,num_features).to(device)
+        print(device)
+        model = GATNet(CUR_MODEL,CUR_DATASET, num_features).to(device)
         data = dataset[0]
         if CUR_DATASET == "AmazonComp" or CUR_DATASET == "AmazonPhotos":
             data = T.RandomNodeSplit("test_rest", num_val=0.1, num_train_per_class=20)(data).to(device)
@@ -74,6 +72,8 @@ def main():
             optimizer.zero_grad()
             out = model(data)
             pred = out.argmax(dim=1)
+            # print(f'pred shape: {pred.shape}, label shape: {data.y.shape}')
+            # print(data.edge_index)
             loss = F.nll_loss(out[data.train_mask], data.y[data.train_mask])
             correct = (pred[data.train_mask] == data.y[data.train_mask]).sum()
             acc = (correct / data.train_mask.sum()).item()
@@ -86,6 +86,7 @@ def main():
                     model.eval()
                     out = model(data)
                     pred = out.argmax(dim=1)
+                    # print(f'pred shape: {pred.shape}, label shape: {data.y.shape}')
                     loss = F.nll_loss(out[data.val_mask], data.y[data.val_mask])
                     correct = (pred[data.val_mask] == data.y[data.val_mask]).sum()
                     acc = (correct / data.val_mask.sum()).item()
@@ -106,11 +107,11 @@ def main():
                         stop_counter = 0
                     else:
                         stop_counter = stop_counter + 1
-                        if VERBOSE:
-                            print('Did not do better at epoch ' + str(epoch + 1) + '.')
-                            print('    Old max: ' + str(cur_max) + '%')
-                            print('    Current score: ' + str(acc) + '%')
-                            print('')
+                        # if VERBOSE:
+                            # print('Did not do better at epoch ' + str(epoch + 1) + '.')
+                            # print('    Old max: ' + str(cur_max) + '%')
+                            # print('    Current score: ' + str(acc) + '%')
+                            # print('')
                         if stop_counter >= EARLY_STOPPING_PATIENCE:
                             if VERBOSE:
                                 print('Stopping training...')
@@ -143,8 +144,10 @@ def main():
     avg_acc = total_avg/NUM_RUNS
     stddev = np.sqrt(np.var(total_avg_list))
     ci = 1.96*(stddev/np.sqrt(len(total_avg_list)))
+    # print(f'Num heads: {4}, num feature: {num_features}')
     print('All Results: ' + str(total_avg_list))
     print(f'Total Test Average: {avg_acc} +/- {ci}')
+
 
 if __name__ == '__main__':
     main()
