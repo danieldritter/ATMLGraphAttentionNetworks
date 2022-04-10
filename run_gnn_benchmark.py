@@ -1,16 +1,17 @@
 import pickle
 import torch
-import numpy as np 
-from sklearn.metrics import confusion_matrix
-from sklearn.utils import compute_class_weight
+import numpy as np
 import torch.nn.functional as F
 import torch_geometric.transforms as T
-from torch_geometric.datasets import Planetoid, GNNBenchmarkDataset, TUDataset
-from torch_geometric.nn import GCNConv, GINConv
+from torch_geometric.datasets import GNNBenchmarkDataset
+from torch_geometric.nn import GCNConv
 from torch_geometric.loader import DataLoader
-from GAT import GraphAttentionLayer
 from GATNet import GATNet
-from tqdm import tqdm 
+
+"""
+Trains a model on the CIFAR10 graph classification task and reports the average
+test accuracy over NUM_RUNS trials. Parameters can be adjusted using the global variables below.
+"""
 
 # Hyper-Parameters
 
@@ -24,11 +25,9 @@ FORCED_EPOCHS = 1
 EARLY_STOPPING_PATIENCE = 5
 NUM_EPOCHS = 1
 LOGGING_FREQUENCY = 2
-NUM_RUNS = 20
+NUM_RUNS = 2
 BATCH_SIZE = 512
 VERBOSE = True
-
-# TODO: Compute training weight and pass in as weight to nll_loss to solve balance issues. 
 
 if __name__ == "__main__":
     total_avg = 0.0
@@ -36,14 +35,14 @@ if __name__ == "__main__":
     datasetTrain = GNNBenchmarkDataset("./data","CIFAR10","train")
     datasetVal = GNNBenchmarkDataset("./data","CIFAR10","val")
     datasetTest = GNNBenchmarkDataset("./data","CIFAR10","test")
-    train_loader = DataLoader(datasetTrain, batch_size=BATCH_SIZE, shuffle=True)    
-    val_loader = DataLoader(datasetVal, batch_size=BATCH_SIZE)  
+    train_loader = DataLoader(datasetTrain, batch_size=BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(datasetVal, batch_size=BATCH_SIZE)
     test_loader = DataLoader(datasetTest, batch_size=BATCH_SIZE)
     num_features = 3
     num_classes = 10
     device = "cuda" if torch.cuda.is_available() else "cpu"
     for i in range(NUM_RUNS):
-        val_losses = [] 
+        val_losses = []
         val_accs = []
         if VERBOSE:
             print('Starting run number: ' + str(i + 1))
@@ -58,19 +57,19 @@ if __name__ == "__main__":
         stop_training = False
         while not stop_training:
             model.train()
-            for batch in tqdm(train_loader):
+            for batch in train_loader:
                 batch = batch.to(device)
                 optimizer.zero_grad()
                 out = model(batch)
                 loss = F.nll_loss(out, batch.y)
                 loss.backward()
                 optimizer.step()
-            model.eval()                
+            model.eval()
             if USE_EARLY_STOPPING:
                 if epoch >= FORCED_EPOCHS - 1:
                     losses = 0.0
                     accs = 0.0
-                    for batch in tqdm(val_loader):
+                    for batch in val_loader:
                         batch = batch.to(device)
                         out = model(batch)
                         pred = out.argmax(dim=1)
@@ -97,11 +96,6 @@ if __name__ == "__main__":
                         stop_counter = 0
                     else:
                         stop_counter = stop_counter + 1
-                        if VERBOSE:
-                            print('Did not do better at epoch ' + str(epoch + 1) + '.')
-                            print('    Old max: ' + str(cur_max) + '%')
-                            print('    Current score: ' + str(avg_acc) + '%')
-                            print('')
                         if stop_counter >= EARLY_STOPPING_PATIENCE:
                             if VERBOSE:
                                 print('Stopping training...')
@@ -109,8 +103,8 @@ if __name__ == "__main__":
             else:
                 if VERBOSE:
                     if not epoch == 0 and (epoch + 1) % LOGGING_FREQUENCY == 0:
-                        losses = 0.0 
-                        accs = 0.0 
+                        losses = 0.0
+                        accs = 0.0
                         for batch in val_loader:
                             batch = batch.to(device)
                             out = model(batch)
@@ -129,14 +123,14 @@ if __name__ == "__main__":
         model.eval()
         if USE_EARLY_STOPPING:
             model.load_state_dict(torch.load("./model/cur_model.pt"))
-        accs = 0.0 
+        accs = 0.0
         for batch in test_loader:
             batch = batch.to(device)
             out = model(batch)
             pred = out.argmax(dim=1)
             acc = torch.sum(pred == batch.y)/batch.y.shape[0]
             accs += acc.item()
-        
+
         print(f'Test Accuracy: {accs/len(test_loader):.4f}%')
         total_avg += accs/len(test_loader)
         total_avg_list.append(accs/len(test_loader))
